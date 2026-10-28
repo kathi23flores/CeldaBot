@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <link rel="icon" href="data:,">
+  <title>Celdabot 3D · Celda de clasificación</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin:0; background:#111821; color:#e7edf5; font:14px/1.5 system-ui,sans-serif; }
+    main { display:grid; grid-template-columns:minmax(0,1fr) 310px; height:100vh; height:100dvh; }
+    #viewport { position:relative; min-width:0; overflow:hidden; }
+    canvas { display:block; width:100%; height:100%; outline:none; touch-action:none; }
+    header { position:absolute; top:20px; left:22px; pointer-events:none; }
+    header h1 { margin:0; font-size:24px; letter-spacing:0.06em; }
+    header p { margin:3px 0; color:#a7b7c8; font-size:12px; }
+    aside { background:#17212d; padding:20px; overflow-y:auto; border-left:1px solid #314050; }
+    h2 { margin:20px 0 8px; font-size:12px; text-transform:uppercase; color:#a7b7c8; letter-spacing:0.08em; }
+    h2:first-child { margin-top:0; }
+    .row { display:flex; justify-content:space-between; gap:8px; margin:4px 0; }
+    strong { font-weight:600; }
+    #estado { font-size:12px; }
+    #contador { font-size:30px; line-height:1.1; color:#69e1ad; }
+    .counts { display:flex; align-items:center; justify-content:space-between; padding:12px 0; }
+    .muted,small { color:#a7b7c8; font-size:12px; }
+    button { width:100%; margin:4px 0; padding:9px 10px; border:1px solid #43566b; background:#243447; color:#eef6ff; border-radius:6px; cursor:pointer; font:inherit; font-size:12px; text-align:left; }
+    button:hover { background:#344c64; } button:focus-visible { outline:2px solid #69e1ad; }
+    button.primary { background:#245c4e; border-color:#438d77; }
+    button:disabled { cursor:default; opacity:0.4; }
+    .views { display:flex; gap:6px; }.views button { text-align:center; }
+    #message { color:#d0e9ff; background:#101923; border-left:2px solid #5c9ccc; padding:10px; min-height:75px; font-size:12px; margin:12px 0; }
+    #selection { color:#ffd67a; }.legend { font-size:12px; }
+    .red { color:#ff7777; }.blue { color:#7faeff; }.green { color:#74e9a1; }.yellow { color:#ffd36b; }
+    input[type=range] { width:100%; accent-color:#69e1ad; }
+    details { font-size:12px; margin-top:14px; color:#b9c8d9; }summary { cursor:pointer; }
+    kbd { color:#fff; font:11px monospace; background:#314254; padding:1px 4px; border-radius:3px; }
+    .label { position:fixed; transform:translate(-50%,-100%); pointer-events:none; padding:3px 7px; border-radius:4px; background:#101923dc; font:11px system-ui,sans-serif; white-space:nowrap; }
+    #labelTower { color:#ffd67a; }
+    #viewportHint { position:absolute; left:20px; bottom:15px; color:#c1cede; background:#111821b8; padding:6px 10px; font-size:11px; pointer-events:none; }
+    @media(max-width:760px) { main { grid-template-columns:1fr; grid-template-rows:60vh auto; height:auto; } aside { border-left:0; border-top:1px solid #314050; } #viewport { height:60vh; } header h1 { font-size:18px; } .label { font-size:9px; } }
+  </style>
+</head>
+<body>
+<main>
+  <section id="viewport" aria-label="Taller virtual">
+    <canvas id="glCanvas" tabindex="0" width="1024" height="768" aria-label="Escena 3D. Clic para seleccionar; arrastra para girar la cámara."></canvas>
+    <header><h1>CELDABOT 3D</h1><p>Mini motor WebGL2 · Celda de clasificación</p></header>
+    <div id="viewportHint">Clic: seleccionar · Arrastrar: girar · Rueda: zoom · Botón derecho: desplazar</div>
+  </section>
+  <aside>
+    <h2>Panel de operación</h2>
+    <div class="row"><span>Estado</span><strong id="estado">INICIANDO</strong></div>
+    <div class="row"><span>Modo</span><strong id="modo">AUTOMÁTICO</strong></div>
+    <div class="counts"><span>Piezas clasificadas</span><strong id="contador">0</strong></div>
+    <div class="row muted"><span>Contenedores incorrectos</span><span id="errors">0</span></div>
+    <div class="muted">Última detección: <strong id="detection">Esperando una pieza</strong></div>
+    <div id="message" role="status">Preparando la celda…</div>
+    <button id="auto" class="primary">Pasar a manual (M)</button>
+    <button id="stop">Detener simulación</button>
+    <button id="reset">Reiniciar celda (R)</button>
+    <h2>Selección y pinza</h2>
+    <div class="row"><span>Objeto</span><strong id="selection">Ninguna</strong></div>
+    <div class="row muted"><span>Estado de pieza</span><span id="pieceState">—</span></div>
+    <button id="pickup">Recoger seleccionada (G)</button>
+    <button id="grip">Abrir / cerrar / soltar (Espacio)</button>
+    <h2>Banda transportadora</h2>
+    <button id="belt">Pausar banda (P)</button>
+    <label class="row muted" for="speed"><span>Velocidad</span><span id="speedValue">0.8 m/s</span></label>
+    <input id="speed" type="range" min="0.2" max="1.8" step="0.1" value="0.8">
+    <h2>Contenedores</h2>
+    <div class="row legend red"><span>● Rojo · esferas</span><span id="binCount0">0/9</span></div>
+    <div class="row legend blue"><span>■ Azul · cubos</span><span id="binCount1">0/9</span></div>
+    <div class="row legend green"><span>▰ Verde · cilindros</span><span id="binCount2">0/9</span></div>
+    <div class="row legend yellow"><span>▲ Amarillo · conos</span><span id="binCount3">0/9</span></div>
+    <h2>Cámara</h2>
+    <div class="views"><button id="view1">1 General</button><button id="view2">2 Cenital</button><button id="view3">3 Pinza</button></div>
+    <details open><summary>Teclado y torre de estado</summary>
+      <p><kbd>A</kbd>/<kbd>D</kbd> base · <kbd>W</kbd>/<kbd>S</kbd> hombro · <kbd>Q</kbd>/<kbd>E</kbd> codo. Estas teclas activan el modo manual.</p>
+      <p><kbd>G</kbd> recoge la pieza seleccionada y la mantiene sujeta. <kbd>Espacio</kbd> abre, cierra o suelta. <kbd>M</kbd> activa la clasificación automática. Flechas: desplazar cámara.</p>
+      <p>La torre es una baliza con luz puntual: verde = operando; amarillo = espera o banda pausada; rojo = detenido o error.</p>
+    </details>
+  </aside>
+</main>
+<div class="label red" id="labelRed">ESFERAS</div><div class="label blue" id="labelBlue">CUBOS</div><div class="label green" id="labelGreen">CILINDROS</div>
+<div class="label yellow" id="labelYellow">CONOS</div>
+<div class="label" id="labelTower">TORRE DE ESTADO</div>
+<!-- Matemática y núcleo del mini motor -->
+<script src="js/math/Matrix4.js"></script><script src="js/core/Geometry.js"></script>
+<script src="js/core/Object3D.js"></script><script src="js/core/Scene.js"></script><script src="js/core/Light.js"></script>
+<!-- Geometrías propias y materiales -->
+<script src="js/geometries/BoxGeometry.js"></script><script src="js/geometries/CylinderGeometry.js"></script>
+<script src="js/geometries/SphereGeometry.js"></script><script src="js/geometries/OpenBoxGeometry.js"></script><script src="js/geometries/ConeGeometry.js"></script>
+<script src="js/materials/BasicMaterial.js"></script><script src="js/objects/Mesh.js"></script>
+<script src="js/objects/RobotArm.js"></script><script src="js/cameras/Camera.js"></script><script src="js/cameras/PerspectiveCamera.js"></script>
+<script src="js/cameras/OrbitControls.js"></script><script src="js/utils/TextureLoader.js"></script><script src="js/utils/Picking.js"></script>
+<script src="js/core/Renderer.js"></script><script src="js/PieceTypes.js"></script><script src="js/Simulation.js"></script><script src="js/main.js"></script>
+</body>
+</html>
